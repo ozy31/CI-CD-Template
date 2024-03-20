@@ -36,6 +36,9 @@ This application aims to create a to-do app in Node.js as a web application with
 
  -  In the hlem charts we have created deployment and service files and we used NodePort type servivce for the reason of seeing our application from everywhere.
 
+ - If we want to store our helm charts in the S3 bucket we need to install S3 plugin for Helm. 
+
+            ``` $ helm plugin install https://github.com/hypnoglow/helm-s3.git ```
 
 
 
