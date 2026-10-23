@@ -1,0 +1,4 @@
+# Rendered by deploy-app.sh with envsubst for every build
+image:
+  repository: ${ECR_REGISTRY}/${APP_REPO_NAME}
+  tag: "${BUILD_NUMBER}"

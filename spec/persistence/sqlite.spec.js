@@ -1,3 +1,5 @@
+process.env.SQLITE_DB_LOCATION = process.env.SQLITE_DB_LOCATION || '/tmp/todos/todo.db';
+const location = process.env.SQLITE_DB_LOCATION;
 const db = require('../../src/persistence/sqlite');
 const fs = require('fs');
 
@@ -8,8 +10,8 @@ const ITEM = {
 };
 
 beforeEach(() => {
-    if (fs.existsSync('/etc/todos/todo.db')) {
-        fs.unlinkSync('/etc/todos/todo.db');
+    if (fs.existsSync(location)) {
+        fs.unlinkSync(location);
     }
 });
 

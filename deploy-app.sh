@@ -1,16 +1,21 @@
-echo 'Deploying App on Kubernetes'
-envsubst < k8s/todo_chart/values-template.yaml > k8s/todo_chart/values.yaml
-sed -i s/HELM_VERSION/${BUILD_NUMBER}/ k8s/todo_chart/Chart.yaml
-AWS_REGION=$AWS_REGION helm repo add stable-todo s3://todo-helm-charts-tr/stable/myapp/ || echo "repository name already exists"
-AWS_REGION=$AWS_REGION helm repo update
-helm package k8s/todo_chart
-AWS_REGION=$AWS_REGION helm s3 push --force todo_chart-${BUILD_NUMBER}.tgz stable-todo
-kubectl create ns todo-dev-ns || echo "namespace todo-dev-ns already exists"
-kubectl delete secret regcred -n todo-dev-ns || echo "there is no regcred secret in todo-dev-ns namespace"
-kubectl create secret generic regcred -n todo-dev-ns \
-    --from-file=.dockerconfigjson=/var/lib/jenkins/.docker/config.json \
-    --type=kubernetes.io/dockerconfigjson
-AWS_REGION=$AWS_REGION helm repo update
-AWS_REGION=$AWS_REGION helm upgrade --install \
-    todo-app-release stable-todo/todo_chart --version ${BUILD_NUMBER} \
-    --namespace todo-dev-ns
+#!/usr/bin/env sh
+set -eu
+echo "Deploying ${APP_NAME} build ${BUILD_NUMBER} to Kubernetes"
+
+# Render values for this build and package the chart with the build number as version
+envsubst < k8s/todo_chart/values-template.yaml > k8s/todo_chart/values-build.yaml
+helm package k8s/todo_chart --version "0.1.${BUILD_NUMBER}" --app-version "${BUILD_NUMBER}"
+
+# Publish the chart to the S3-backed Helm repository (helm-s3 plugin)
+helm repo add stable-todo "${HELM_S3_REPO}" 2>/dev/null || true
+helm s3 push --force "todo_chart-0.1.${BUILD_NUMBER}.tgz" stable-todo
+helm repo update
+
+kubectl get ns "${NAMESPACE}" >/dev/null 2>&1 || kubectl create ns "${NAMESPACE}"
+
+# Upgrade (or install) and wait until the rollout is healthy; roll back automatically on failure
+helm upgrade --install todo-app-release stable-todo/todo_chart \
+  --version "0.1.${BUILD_NUMBER}" \
+  --namespace "${NAMESPACE}" \
+  -f k8s/todo_chart/values-build.yaml \
+  --atomic --wait --timeout 5m

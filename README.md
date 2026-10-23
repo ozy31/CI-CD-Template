@@ -1,48 +1,53 @@
-# TODO application deployed in HELM on AWS Cloud via JENKINS
+# CI-CD-Template
 
+A complete Jenkins → Amazon ECR → Helm → Kubernetes delivery pipeline for a small Node.js to-do application. It is meant as a starting template for teams that run Jenkins and want a simple, scriptable path from commit to a running release.
 
-## Description
+```mermaid
+flowchart LR
+  dev[git push] --> jenkins[Jenkins pipeline]
+  jenkins --> build["Build & Test<br/>multi-stage Docker build runs Jest"]
+  build --> ecr["Push to Amazon ECR<br/>tag = build number"]
+  ecr --> chart["Package Helm chart<br/>push to S3 Helm repo"]
+  chart --> k8s["helm upgrade --install --atomic<br/>Kubernetes"]
+```
 
+## Pipeline
 
-This application aims to create a to-do app in Node.js as a web application with yarn on AWS Instances
+| Stage | Script | What happens |
+|---|---|---|
+| Build & Test | [`build-image.sh`](build-image.sh) | Multi-stage Docker build; unit tests run in the build stage, so a red test means no image |
+| Push to ECR | [`push-image.sh`](push-image.sh) | Logs in with `aws ecr get-login-password` and pushes an immutable tag (`$BUILD_NUMBER`) |
+| Deploy with Helm | [`deploy-app.sh`](deploy-app.sh) | Renders build-specific values with `envsubst`, versions and pushes the chart to an S3 Helm repo (helm-s3), then `helm upgrade --install --atomic --wait`. A failed rollout is rolled back automatically |
 
+The [`Jenkinsfile`](Jenkinsfile) wires these together, only deploys from `main`, prevents concurrent builds and cleans up local images after every run.
 
-# STEPS TO FOLLOW
+## Repository layout
 
-- Create the source code which specifies your needs. In this case we'll take levarege from one of the app that can be found publicly written in node.js .
+```
+src/, spec/              Node.js app (Express, SQLite or MySQL persistence) and Jest tests
+Dockerfile               test stage + slim non-root runtime stage
+Jenkinsfile              declarative pipeline
+*.sh                     build / push / deploy steps (usable outside Jenkins too)
+k8s/todo_chart/          Helm chart: Deployment with probes and resources, Service
+.github/workflows/ci.yml GitHub Actions: tests, helm lint, image build
+```
 
+## Running locally
 
--  Create the Dockerfile 
+```bash
+npm ci && npm test
+docker build -t todo-app:dev .
+docker run -p 3000:3000 todo-app:dev      # http://localhost:3000
+helm template demo k8s/todo_chart
+```
 
--   Since our app is written in node.js language, we need to use very lightweigth distrubution for this app which is  ``` alpine ``` as base image.
+## Jenkins prerequisites
 
--   If we decide to use private repo such as ECR, Artifact Repository we need to provide our necessary credentials in the Jenkinsifle since our server needs to be login into the private registries.
-    
--   Tag and Push it to your Repo ( Github, Bitbucket, ECR ... etc)
+- Agent with Docker, AWS CLI v2, Helm 3 + [helm-s3](https://github.com/hypnoglow/helm-s3) plugin, `kubectl` and `envsubst`.
+- An IAM role (instance profile or IRSA) with ECR push, S3 access to the chart bucket and EKS access.
+- An ECR repository named `todo-app` and an S3 bucket for charts (`HELM_S3_REPO`).
 
--   Create a Jenkinsfile
+## Notes
 
-    ``` NOTE: You can create scripts for building , tagging and deploying you app to K8s environmet ```
-
--   In the Jenkinsfile, Since there will be some stages you should use pipeline. 
-
-        In order to authenticate your Jenkins server with some privilages you need to define some variables and Dynamic Block.
-
-        In this configuration we wanted to deploy our app in the AWS and we need to define some necessary variables like ECR_REPO, APP_NAME, AWS_REGION.. etc
-
- -  As a post build  action we wanted to delete all the local images so we need to define it in the post section in the Jenkinsfile
-
- - We use helm charts to deploy that application into the environment.
-
- -  In the hlem charts we have created deployment and service files and we used NodePort type servivce for the reason of seeing our application from everywhere.
-
- - If we want to store our helm charts in the S3 bucket we need to install S3 plugin for Helm. 
-
-            ``` $ helm plugin install https://github.com/hypnoglow/helm-s3.git ```
-
-
-
-
-
-
-
+The application code comes from Docker's public *getting-started* sample. The pipeline, Dockerfile, chart and scripts are the focus of this repository.
+For reusable GitHub Actions / GitLab CI / Bitbucket Pipelines templates with OIDC, image signing and GitOps promotion, see [platform-ci-templates](https://github.com/ozy31/platform-ci-templates).

@@ -1,39 +1,41 @@
 pipeline {
     agent any
+    options {
+        timestamps()
+        disableConcurrentBuilds()
+        buildDiscarder(logRotator(numToKeepStr: '20'))
+    }
     environment {
-        PATH=sh(script:"echo $PATH:/usr/local/bin", returnStdout:true).trim()
-        APP_NAME="to-do-app"
-        APP_REPO_NAME="todo-app"
-        AWS_ACCOUNT_ID=sh(script:'export PATH="$PATH:/usr/local/bin" && aws sts get-caller-identity --query Account --output text', returnStdout:true).trim()
-        AWS_REGION="eu-central-1"
-        ECR_REGISTRY="${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+        PATH = "${env.PATH}:/usr/local/bin"
+        APP_NAME = "to-do-app"
+        APP_REPO_NAME = "todo-app"
+        AWS_REGION = "eu-central-1"
+        AWS_ACCOUNT_ID = sh(script: 'aws sts get-caller-identity --query Account --output text', returnStdout: true).trim()
+        ECR_REGISTRY = "${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_REGION}.amazonaws.com"
+        HELM_S3_REPO = "s3://todo-helm-charts/stable/todo/"
+        NAMESPACE = "todo-dev"
     }
     stages {
-        stage('Building Application') {
+        stage('Build & Test') {
             steps {
-                echo 'Application is building'
-                sh ". ./build-image.sh"
+                sh './build-image.sh'
             }
         }
-       
-      
-        stage('Push Images to ECR Repo') {
+        stage('Push to ECR') {
             steps {
-                echo "Pushing ${APP_NAME} App Images to ECR Repo"
-                sh ". ./push-image.sh"
+                sh './push-image.sh'
             }
         }
-        stage('Deploy App on TODO Kubernetes Cluster'){
+        stage('Deploy with Helm') {
+            when { branch 'main' }
             steps {
-                echo 'Deploying App on K8s Cluster'
-                sh ". ./deploy-app.sh"
+                sh './deploy-app.sh'
             }
         }
     }
     post {
         always {
-            echo 'Deleting all local images'
-            sh 'docker image prune -af'
+            sh 'docker image prune -af || true'
         }
     }
 }
